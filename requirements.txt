@@ -1,0 +1,7 @@
+fastmcp
+anthropic
+websockets
+fastapi
+sqlmodel
+python-dotenv
+psycopg2-binary
