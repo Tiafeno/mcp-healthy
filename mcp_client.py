@@ -37,18 +37,15 @@ class MCPClient:
         tools = response.tools
         print("\nConnected to server with tools:", [tool.name for tool in tools])
 
-    async def process_query(self, user_message: str) -> str:
+    async def process_query(self, user_message: str, last_message: str | None) -> str:
         """Process a query using Claude and available tools"""
         if not self.session:
             raise RuntimeError("Session not initialized. Call connect_to_server first.")
 
-        messages: list[MessageParam] = [
-            {
-                "role": "user",
-                "content": user_message
-            }
-        ]
-
+        messages: list[MessageParam] = []
+        if last_message:
+            messages.append({"role": "assistant", "content": last_message})
+        messages.append({"role": "user", "content": user_message})
         response = await self.session.list_tools()
         available_tools = [{
             "name": tool.name,

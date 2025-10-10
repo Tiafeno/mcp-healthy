@@ -1,12 +1,12 @@
 import uvicorn
 import os
-import uuid
+from sqlmodel import select
 from typing import Annotated
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Depends, WebSocketException, status, Header
 from dotenv import load_dotenv
 load_dotenv()
 
-from models import lifespan, Session, get_session, Message
+from models import lifespan, Session, get_session, Message, Conversation
 
 app = FastAPI(lifespan=lifespan)
 
@@ -53,23 +53,30 @@ async def websocket_endpoint(websocket: WebSocket, conversation_id: str, token: 
     try:
         client = MCPClient(token, api_base_url)
         await client.connect_to_server()
+        
+        last_message_text: str | None = None
+        statement = select(Message) \
+            .where(Message.conversation_id == conversation_id) \
+            .where(Message.role == "assistant") \
+            .order_by(Message.created_at.desc())
+        last_message = session.exec(statement).first()
+        if last_message:
+            last_message_text = last_message.content
+            
         while True:
-            data = await websocket.receive_text()
+            message_received = await websocket.receive_text()
             try:
                 message = Message(
-                    uuid=uuid.uuid4().__str__(), # TODO: Utiliser un commit event pour générer l'UUID
                     conversation_id=conversation_id,
                     role="user",
-                    content=data,
+                    content=message_received,
                     created_at="now()",
                 )
                 session.add(message)
-                
                 # Process the query and get the response
-                response = await client.process_query(data)
+                response = await client.process_query(message_received, last_message_text)
                 await manager.send_personal_message(response, websocket)
                 response_message = Message(
-                    uuid=uuid.uuid4().__str__(),
                     conversation_id=conversation_id,
                     role="assistant",
                     content=response,

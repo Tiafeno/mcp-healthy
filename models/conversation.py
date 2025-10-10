@@ -1,4 +1,7 @@
 from sqlmodel import Field, SQLModel
+from sqlalchemy import event
+from datetime import datetime
+import uuid
 
 class Conversation(SQLModel, table=True):
     __tablename__ = "ai_conversations"
@@ -18,5 +21,11 @@ class Message(SQLModel, table=True):
     conversation_id: str
     role: str
     content: str
-    created_at: str
-    updated_at: str | None = None
+    created_at: datetime = Field()
+    updated_at: datetime | None = None
+
+@event.listens_for(Conversation, "before_insert")
+@event.listens_for(Message, "before_insert")
+def set_conversation_uuid(mapper, connection, target):
+    if target.uuid is None:
+        target.uuid = uuid.uuid4().__str__()
