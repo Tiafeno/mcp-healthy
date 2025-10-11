@@ -10,10 +10,10 @@ from models import lifespan, Session, get_session, Message, Conversation
 
 app = FastAPI(lifespan=lifespan)
 
-from mcp_client import MCPClient
+from streamablehttp_client import StreamableHTTPClient
 
 # Récupération des variables d'environnement
-api_base_url = os.getenv("API_BASE_URL", "https://healthy-ai.test/mcp/healthy")
+mcp_streaming_url = os.getenv("MCP_STREAMING_HTTP_URL", "https://healthy-ai.test/mcp/healthy")
 
 async def get_ws_token(
     websocket: WebSocket,
@@ -51,7 +51,7 @@ tokenDep = Annotated[str, Depends(get_ws_token)]
 async def websocket_endpoint(websocket: WebSocket, conversation_id: str, token: tokenDep, session: sessionDep):
     await manager.connect(websocket)
     try:
-        client = MCPClient(token, api_base_url)
+        client = StreamableHTTPClient(token, mcp_streaming_url)
         await client.connect_to_server()
         
         last_message_text: str | None = None

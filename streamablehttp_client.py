@@ -8,19 +8,19 @@ from mcp.client.streamable_http import streamablehttp_client
 from anthropic import Anthropic
 from anthropic.types import MessageParam
 
-class MCPClient:
-    def __init__(self, token: str, api_base_url: str):
+class StreamableHTTPClient:
+    def __init__(self, token: str, mcp_url: str):
         # Initialize session and client objects
         self.session: Optional[ClientSession] = None
         self.exit_stack = AsyncExitStack()
         self.anthropic = Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
         self.token = token
-        self.api_base_url = api_base_url
+        self.mcp_url = mcp_url
 
     async def connect_to_server(self):
         """Connect to an MCP server via HTTP transport"""
         server_params = {
-            "url": self.api_base_url,
+            "url": self.mcp_url,
             "headers": {
                 "Authorization": f"Bearer {self.token}"
             }
