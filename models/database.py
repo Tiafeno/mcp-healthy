@@ -7,7 +7,7 @@ import logging
 logging.basicConfig(level=logging.INFO)
 
 # Get database URL from environment variables for security
-DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://macbookprom1:password@127.0.0.1:5432/rgo")
+DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./test.db")
 
 engine = create_engine(DATABASE_URL, echo=True) # echo=True for logging SQL queries
 
