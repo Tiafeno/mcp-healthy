@@ -109,7 +109,19 @@ class StreamableHTTPClient:
                 final_text.append(response.content[0].text)
 
         return "\n".join(final_text)
-    
+
+    def upload_file(
+        self, file_path: str, file_name: str, mime_type: str
+    ) -> beta.FileMetadata:
+        """Upload a file to the MCP server and return its metadata"""
+        if not self.session:
+            raise RuntimeError("Session not initialized. Call connect_to_server first.")
+
+        with open(file_path, "rb") as f:
+            response = self.anthropic.beta.files.upload(file=(file_name, f, mime_type))
+            f.close()
+        return response
+
     async def cleanup(self):
         """Clean up resources"""
         await self.exit_stack.aclose()
