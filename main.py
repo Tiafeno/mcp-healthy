@@ -10,7 +10,7 @@ from fastapi import (
     Depends,
     WebSocketException,
     status,
-    Header,
+    Query,
 )
 from dotenv import load_dotenv
 
@@ -30,7 +30,7 @@ mcp_streaming_url = os.getenv(
 
 async def get_ws_token(
     websocket: WebSocket,
-    token: Annotated[str | None, Header()] = None,
+    token: Annotated[str | None, Query()] = None,
 ):
     if token is None:
         raise WebSocketException(code=status.WS_1008_POLICY_VIOLATION)
