@@ -6,19 +6,20 @@ from mcp import ClientSession
 from mcp.client.streamable_http import streamablehttp_client
 
 from anthropic import Anthropic
-from anthropic.types import MessageParam, ImageBlockParam, beta
+from anthropic.types import ImageBlockParam, beta
 
 from models import Documents
 
 
 class StreamableHTTPClient:
-    def __init__(self, token: str, mcp_url: str):
+    def __init__(self, session_token: str, mcp_url: str):
         # Initialize session and client objects
         self.session: Optional[ClientSession] = None
         self.exit_stack = AsyncExitStack()
         self.anthropic = Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
-        self.token = token
+        self.token = session_token
         self.mcp_url = mcp_url
+        self.max_tokens = 1000
 
     async def connect_to_server(self):
         """Connect to an MCP server via HTTP transport"""
@@ -34,17 +35,11 @@ class StreamableHTTPClient:
         self.session = await self.exit_stack.enter_async_context(
             ClientSession(self.read, self.write)
         )
-
         await self.session.initialize()
-
-        # List available tools
-        response = await self.session.list_tools()
-        tools = response.tools
-        print("\nConnected to server with tools:", [tool.name for tool in tools])
 
     async def process_query(
         self, user_message: str, last_message: str | None, document_urls: list[str]
-    ) -> str:
+    ):
         """Process a query using Claude and available tools"""
         if not self.session:
             raise RuntimeError("Session not initialized. Call connect_to_server first.")
