@@ -23,6 +23,14 @@ class Message(SQLModel, table=True):
     content: str
     created_at: datetime = Field()
     updated_at: datetime | None = None
+    
+    def dict(self):
+        return {
+            "uuid": self.uuid.__str__(),
+            "role": self.role,
+            "content": self.content,
+            "created_at": self.created_at.isoformat(),
+        }
 
 @event.listens_for(Conversation, "before_insert")
 @event.listens_for(Message, "before_insert")
