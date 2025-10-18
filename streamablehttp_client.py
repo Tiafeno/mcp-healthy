@@ -80,17 +80,16 @@ class StreamableHTTPClient:
         # Initial Claude API call
         response = self.anthropic.messages.create(
             model="claude-sonnet-4-5",
-            max_tokens=1000,
+            max_tokens=self.max_tokens,
             messages=messages,
-            tools=available_tools,
+            tools=available_tools
         )
 
         # Process response and handle tool calls
-        final_text = []
-
+        message: str | None = None
         for content in response.content:
             if content.type == "text":
-                final_text.append(content.text)
+                yield content.text
             elif content.type == "tool_use":
                 tool_name = content.name
                 tool_args = content.input
@@ -106,13 +105,12 @@ class StreamableHTTPClient:
                 # Get next response from Claude
                 response = self.anthropic.messages.create(
                     model="claude-sonnet-4-5",
-                    max_tokens=1000,
+                    max_tokens=self.max_tokens,
                     messages=messages,
                 )
+                message =  response.content[0].text
 
-                final_text.append(response.content[0].text)
-
-        return "\n".join(final_text)
+        yield message
 
     def upload_file(
         self, file_path: str, file_name: str, mime_type: str
