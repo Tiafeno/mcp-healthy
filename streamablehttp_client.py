@@ -47,6 +47,15 @@ class StreamableHTTPClient:
         messages: list = []
         if last_message:
             messages.append({"role": "assistant", "content": last_message})
+        else:
+            messages.append(
+                {
+                    "role": "user",
+                    "content": (
+                        "You are a health and nutrition expert. Use the tools of healthy-server to assist users with their dietary needs and health-related inquiries. Provide accurate and helpful information based on the user's questions and the data available through the tools."
+                    ),
+                }
+            )
 
         document_sources: list[ImageBlockParam] = [
             {"type": "image", "source": {"type": "url", "url": url}}
