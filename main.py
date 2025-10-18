@@ -68,8 +68,8 @@ tokenDep = Annotated[str, Depends(get_ws_token)]
 async def websocket_endpoint(
     websocket: WebSocket, conversation_id: str, token: tokenDep, session: sessionDep
 ):
-    await manager.connect(websocket)
     try:
+        await manager.connect(websocket)
         client = StreamableHTTPClient(token, mcp_streaming_url)
         await client.connect_to_server()
 
@@ -85,7 +85,9 @@ async def websocket_endpoint(
             last_message_text = last_message.content
 
         while True:
-            message_received = (await websocket.receive_text())  # format {"message": "text", attachments: [...]}
+            message_received = (
+                await websocket.receive_text()
+            )  # format {"message": "text", attachments: [...]}
             try:
                 message_data = json.loads(message_received)
             except json.JSONDecodeError:
@@ -95,10 +97,13 @@ async def websocket_endpoint(
             message_attachments = message_data.get("attachments", [])
 
             if not message_content or len(message_content.strip()) <= 2:
-                await manager.send_personal_message("Message content is required", websocket)
+                await manager.send_personal_message(
+                    "Message content is required", websocket
+                )
                 continue
             urls = list()
 
+            await typing_indicator(True, websocket)
             try:
                 message = Message(
                     conversation_id=conversation_id,
@@ -108,6 +113,9 @@ async def websocket_endpoint(
                 )
                 session.add(message)
                 session.commit()
+                
+                # Send user message back to client
+                await manager.send_personal_message(message.dict(), websocket)
 
                 if message_attachments is not None and len(message_attachments) > 0:
                     documents = [
@@ -123,25 +131,37 @@ async def websocket_endpoint(
                         session.commit()
 
                 # Process the query and get the response
-                response = await client.process_query(message_content, last_message_text, urls)
-                await manager.send_personal_message(response, websocket)
-                response_message = Message(
-                    conversation_id=conversation_id,
-                    role="assistant",
-                    content=response,
-                    created_at="now()",  # type: ignore
-                )
-                session.add(response_message)
-                session.commit()
+                async for response in client.process_query(message_content, last_message_text, urls):
+                    if response is None:
+                        continue
+                    response_message = Message(
+                        conversation_id=conversation_id,
+                        role="assistant",
+                        content=response,
+                        created_at="now()",  # type: ignore
+                    )
+                    session.add(response_message)
+                    session.commit()
+
+                    await manager.send_personal_message(response_message.dict(), websocket)
+
+                await typing_indicator(False, websocket)
+
             except Exception as e:
-                await manager.send_personal_message(f"Error processing message: {e}", websocket)
+                await manager.send_personal_message(
+                    f"Error processing message: {e}", websocket
+                )
                 continue
 
     except WebSocketDisconnect:
         manager.disconnect(websocket)
         await manager.broadcast(f"Client #{conversation_id} left the chat")
     finally:
-        await client.cleanup()
+        if client:
+            await client.cleanup()
+            
+async def typing_indicator(status: bool, websocket: WebSocket):
+    await manager.send_personal_message({"type": "typing", "status": status}, websocket)
 
 async def get_document_by_id(
     attachment_id: int, session: sessionDep
