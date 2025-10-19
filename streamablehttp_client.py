@@ -8,7 +8,7 @@ from mcp.client.streamable_http import streamablehttp_client
 from anthropic import Anthropic
 from anthropic.types import ImageBlockParam, beta
 
-from models import Documents
+from utils.logging_config import get_logger
 
 
 class StreamableHTTPClient:
@@ -20,6 +20,7 @@ class StreamableHTTPClient:
         self.token = session_token
         self.mcp_url = mcp_url
         self.max_tokens = 1000
+        self.logger = get_logger("healthy-mcp")
 
     async def connect_to_server(self):
         """Connect to an MCP server via HTTP transport"""
@@ -46,6 +47,7 @@ class StreamableHTTPClient:
 
         messages: list = []
         if last_message:
+            self.logger.debug("Continuing conversation with last message. Message: %s", last_message)
             messages.append({"role": "assistant", "content": last_message})
         else:
             messages.append(

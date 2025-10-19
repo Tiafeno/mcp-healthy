@@ -27,3 +27,4 @@ venv.bak/
 Thumbs.db
 
 storage
+logs/*.log
