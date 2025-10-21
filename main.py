@@ -125,17 +125,29 @@ async def websocket_endpoint(
         await client.connect_to_server()
         ws_logger.info(f"StreamableHTTPClient connected for conversation {conversation_id}")
 
+        # Try to get last message from Redis first
         last_message_text: str | None = None
-        statement = (
-            select(Message)
-            .where(Message.conversation_id == conversation_id)
-            .where(Message.role == "assistant")
-            .order_by(Message.created_at.desc())  # type: ignore
-        )
-        last_message = session.exec(statement).first()
-        if last_message:
-            last_message_text = last_message.content
-            ws_logger.debug(f"Last message found for conversation {conversation_id}")
+        last_message_text = await redis_service.get_last_message(conversation_id)
+        
+        if last_message_text:
+            ws_logger.debug(f"Last message retrieved from Redis for conversation {conversation_id}")
+        else:
+            # Fallback to database if not in Redis
+            ws_logger.debug("No cached message found, querying database")
+            statement = (
+                select(Message)
+                .where(Message.conversation_id == conversation_id)
+                .where(Message.role == "assistant")
+                .order_by(Message.created_at.desc())  # type: ignore
+            )
+            last_message = session.exec(statement).first()
+            if last_message:
+                last_message_text = last_message.content
+                # Store in Redis for future use
+                await redis_service.store_last_message(conversation_id, last_message_text)
+                ws_logger.debug(f"Last message found in database and cached for conversation {conversation_id}")
+            else:
+                ws_logger.debug(f"No previous messages found for conversation {conversation_id}")
 
         while True:
             message_received = (
@@ -209,10 +221,16 @@ async def websocket_endpoint(
                     session.add(response_message)
                     session.commit()
 
+                    # Update last message in Redis
                     last_message_text = response_message.content
+                    redis_stored = await redis_service.store_last_message(conversation_id, last_message_text)
+                    if not redis_stored:
+                        ws_logger.warning(f"Failed to update Redis cache for conversation {conversation_id}")
+                    
                     await manager.send_personal_message(response_message.dict(), websocket)
-
+                
                 ws_logger.info(f"Query processed successfully, {response_count} responses sent")
+
                 await typing_indicator(False, websocket)
 
             except Exception as e:
