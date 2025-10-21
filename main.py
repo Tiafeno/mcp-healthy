@@ -30,7 +30,7 @@ app_logger = setup_logging(
     app_name=os.getenv("APP_NAME", "healthy-mcp")
 )
 
-from models import lifespan, Session, get_session, Message, Documents
+from models import lifespan, Session, get_session, Message, Documents, engine
 
 app = FastAPI(lifespan=lifespan)
 
@@ -252,7 +252,77 @@ async def websocket_endpoint(
         if 'client' in locals():
             await client.cleanup()
             ws_logger.debug("StreamableHTTPClient cleanup completed")
-            
+
+# Routes de santé et d'administration
+@app.get("/status/health")
+async def health_check(token: Annotated[str, Query()],):
+    """Endpoint de santé pour vérifier l'état du système"""
+    health_logger = get_logger("healthy-mcp.health")
+    
+    try:
+        # Vérifier l'état de Redis
+        redis_health = await redis_service.health_check()
+        
+        # Vérifier l'état de la base de données
+        db_healthy = True
+        try:
+            with Session(engine) as session:
+                session.exec(select(1)).first()
+        except Exception as e:
+            health_logger.error(f"Database health check failed: {e}")
+            db_healthy = False
+        
+        health_status = {
+            "status": "healthy" if redis_health["connected"] and db_healthy else "degraded",
+            "timestamp": redis_service._get_current_timestamp(),
+            "services": {
+                "redis": {
+                    "status": "healthy" if redis_health["connected"] and redis_health["ping_successful"] else "unhealthy",
+                    "connected": redis_health["connected"],
+                    "ping_successful": redis_health["ping_successful"],
+                    "active_conversations": redis_health["active_conversations"],
+                    "error": redis_health.get("error")
+                },
+                "database": {
+                    "status": "healthy" if db_healthy else "unhealthy"
+                }
+            }
+        }
+        
+        health_logger.info(f"Health check completed: {health_status['status']}")
+        return health_status
+        
+    except Exception as e:
+        health_logger.error(f"Health check failed: {e}", exc_info=True)
+        return {
+            "status": "unhealthy",
+            "timestamp": redis_service._get_current_timestamp(),
+            "error": str(e)
+        }
+
+@app.get("/status/redis-stats")
+async def redis_stats(token: Annotated[str, Query()],):
+    """Endpoint pour obtenir les statistiques Redis"""
+    stats_logger = get_logger("healthy-mcp.redis.stats")
+    
+    try:
+        active_conversations = await redis_service.get_active_conversations()
+        redis_health = await redis_service.health_check()
+        
+        stats = {
+            "connected": redis_health["connected"],
+            "active_conversations": len(active_conversations),
+            "conversations": active_conversations[:10],  # Limite à 10 pour éviter les réponses trop grandes
+            "total_conversations": len(active_conversations)
+        }
+        
+        stats_logger.debug(f"Redis stats requested: {len(active_conversations)} active conversations")
+        return stats
+        
+    except Exception as e:
+        stats_logger.error(f"Failed to get Redis stats: {e}", exc_info=True)
+        return {"error": str(e), "connected": False}
+
 async def typing_indicator(status: bool, websocket: WebSocket):
     await manager.send_personal_message({"type": "typing", "status": status}, websocket)
 
