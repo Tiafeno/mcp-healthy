@@ -14,11 +14,14 @@ from fastapi import (
 )
 from dotenv import load_dotenv
 
-load_dotenv()
+load_dotenv(".env")
+load_dotenv(".env.logging", override=True)
+load_dotenv(".env.redis", override=True)
 
 # Configuration du logging (doit être fait au début)
 from utils.logging_config import setup_logging, get_logger
 from utils.logging_middleware import LoggingMiddleware, websocket_logger
+from utils.redis_service import redis_service
 
 # Initialiser le système de logging
 app_logger = setup_logging(

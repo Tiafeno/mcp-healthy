@@ -17,6 +17,27 @@ def get_session():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Import Redis service here to avoid circular imports
+    from utils.redis_service import redis_service
+    
     logging.info("Starting up...")
+    
+    # Initialize Redis connection
+    try:
+        redis_connected = await redis_service.connect()
+        if redis_connected:
+            logging.info("Redis service initialized successfully")
+        else:
+            logging.warning("Redis service failed to initialize, continuing without cache")
+    except Exception as e:
+        logging.error(f"Error initializing Redis service: {e}")
+    
     yield
+    
+    # Cleanup Redis connection
     logging.info("Shutting down...")
+    try:
+        await redis_service.disconnect()
+        logging.info("Redis service disconnected")
+    except Exception as e:
+        logging.error(f"Error disconnecting Redis service: {e}")
