@@ -49,7 +49,6 @@ mcp_streaming_url = os.getenv(
 
 logger.info(f"Configuration MCP Streaming URL: {mcp_streaming_url}")
 
-
 async def get_ws_token(
     websocket: WebSocket,
     token: Annotated[str | None, Query()] = None,
