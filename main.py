@@ -335,17 +335,10 @@ async def redis_stats(token: Annotated[str, Query()],):
 async def typing_indicator(status: bool, websocket: WebSocket):
     await manager.send_personal_message({"type": "typing", "status": status}, websocket)
 
-async def get_document_by_id(
-    attachment_id: int, session: sessionDep
-) -> Documents | None:
+async def get_document_by_id(attachment_id: int, session: sessionDep) -> Documents | None:
     db_logger = get_logger("healthy-mcp.database")
     try:
-        db_logger.debug(f"Fetching document with id {attachment_id}")
         document = session.get(Documents, attachment_id)
-        if document:
-            db_logger.debug(f"Document found: {document.name}")
-        else:
-            db_logger.warning(f"Document not found with id {attachment_id}")
         return document
     except Exception as e:
         db_logger.error(f"Error fetching document with id {attachment_id}: {e}", exc_info=True)
@@ -356,16 +349,13 @@ async def get_document_download_url(document: Documents, token: str) -> str | No
     try:
         api_base_path = os.getenv("API_BASE_URL")
         if not api_base_path:
-            api_logger.error("API_BASE_URL environment variable not set")
             return None
         
         url = f"{api_base_path}/api/documents/{document.id}/download?access_token={token}"
-        api_logger.debug(f"Generated download URL for document {document.id}")
         return url
     except Exception as e:
         api_logger.error(f"Error generating download URL for document {document.id}: {e}")
         return None
-
 
 if __name__ == "__main__":
     uvicorn.run(
