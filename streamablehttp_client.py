@@ -20,6 +20,7 @@ class StreamableHTTPClient:
         self.token = session_token
         self.mcp_url = mcp_url
         self.max_tokens = 1000
+        self.model = "claude-sonnet-4-5"
         self.logger = get_logger(__name__)
 
     async def connect_to_server(self):
@@ -99,7 +100,7 @@ class StreamableHTTPClient:
         # Initial Claude API call
         try:
             response = self.anthropic.messages.create(
-                model="claude-sonnet-4-5",
+                model=self.model,
                 max_tokens=self.max_tokens,
                 messages=messages,
                 tools=available_tools  # type: ignore
@@ -136,7 +137,7 @@ class StreamableHTTPClient:
 
                     # Get next response from Claude
                     response = self.anthropic.messages.create(
-                        model="claude-sonnet-4-5",
+                        model=self.model,
                         max_tokens=self.max_tokens,
                         messages=messages,
                     )
