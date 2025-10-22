@@ -242,9 +242,7 @@ async def websocket_endpoint(
 
             except Exception as e:
                 ws_logger.error(f"Error processing message: {e}", exc_info=True)
-                await manager.send_personal_message(
-                    f"Error processing message: {e}", websocket
-                )
+                await manager.send_personal_message({"type": "error", "message": str(e)}, websocket)
                 await typing_indicator(False, websocket)
                 continue
 
