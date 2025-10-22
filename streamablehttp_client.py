@@ -98,16 +98,12 @@ class StreamableHTTPClient:
             available_tools = []
 
         # Initial Claude API call
-        try:
-            response = self.anthropic.messages.create(
-                model=self.model,
-                max_tokens=self.max_tokens,
-                messages=messages,
-                tools=available_tools  # type: ignore
-            )
-        except Exception as e:
-            self.logger.error(f"Failed to get response from Claude API: {e}", exc_info=True)
-            return
+        response = self.anthropic.messages.create(
+            model=self.model,
+            max_tokens=self.max_tokens,
+            messages=messages,
+            tools=available_tools  # type: ignore
+        )
 
         # Process response and handle tool calls
         message: str | None = None
