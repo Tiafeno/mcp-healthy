@@ -166,7 +166,7 @@ class StreamableHTTPClient:
                     },
                     {
                         "role": "user",
-                        "content": "Resume en une seul phrase le sujet principal de la conversation precedente pour servir de titre concis.",
+                        "content": "Resume en une seul phrase le sujet principal de la conversation precedente pour servir de titre concis. Sans utiliser de guillemets ou markeurs de citation.",
                     }
                 ],
             )
