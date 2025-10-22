@@ -235,6 +235,7 @@ async def websocket_endpoint(
                     conversation.last_message = last_message_text
                     session.add(conversation)
                     session.commit()
+                    await manager.send_personal_message({"type": "update-conversation"}, websocket)
                     ws_logger.debug(f"Conversation title updated for {conversation_id}")
 
                 await typing_indicator(False, websocket)
