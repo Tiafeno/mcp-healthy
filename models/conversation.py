@@ -7,6 +7,7 @@ class Conversation(SQLModel, table=True):
     __tablename__ = "ai_conversations"
     
     uuid: str | None = Field(default=None, primary_key=True)
+    title: str
     user_id: str
     last_message: str|None = None
     last_message_role: str|None = None
