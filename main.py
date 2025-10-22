@@ -149,10 +149,7 @@ async def websocket_endpoint(
                 ws_logger.debug(f"No previous messages found for conversation {conversation_id}")
 
         while True:
-            message_received = (
-                await websocket.receive_text()
-            )  # format {"message": "text", attachments: [...]}
-            
+            message_received = (await websocket.receive_text())  # format {"message": "text", attachments: [...]}
             websocket_logger.log_message_received(websocket_id, "text", len(message_received))
             
             try:
