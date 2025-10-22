@@ -154,6 +154,29 @@ class StreamableHTTPClient:
         
         self.logger.info(f"Query processing completed. Text responses: {text_responses}, Tool calls: {tool_calls}")
 
+    async def process_conversation_title_query(self, assistant_message: str) -> str | None:
+        try:
+            response = self.anthropic.messages.create(
+                model=self.model,
+                max_tokens=1000,
+                messages=[
+                    {
+                        "role": "assistant",
+                        "content": assistant_message
+                    },
+                    {
+                        "role": "user",
+                        "content": "Resume en une seul phrase le sujet principal de la conversation precedente pour servir de titre concis.",
+                    }
+                ],
+            )
+            if response.content and response.content[0].type == "text":
+                return response.content[0].text
+            return None
+        except Exception as e:
+            self.logger.error(f"Failed to get response from Claude API: {e}", exc_info=True)
+            return None
+    
     async def cleanup(self):
         """Clean up resources"""
         self.logger.info("Starting cleanup of StreamableHTTPClient resources")

@@ -30,7 +30,7 @@ app_logger = setup_logging(
     app_name=os.getenv("APP_NAME", "healthy-mcp")
 )
 
-from models import lifespan, Session, get_session, Message, Documents, engine
+from models import lifespan, Session, get_session, Message, Documents, Conversation, engine
 
 app = FastAPI(lifespan=lifespan)
 
@@ -229,6 +229,16 @@ async def websocket_endpoint(
                     await manager.send_personal_message(response_message.dict(), websocket)
                 
                 ws_logger.info(f"Query processed successfully, {response_count} responses sent")
+                
+                # generate conversation title
+                conversation = session.get(Conversation, conversation_id)
+                if last_message_text and conversation and conversation.title in (None, "", "New Conversation"):
+                    conversation_title = await client.process_conversation_title_query(last_message_text)
+                    conversation.title = conversation_title if conversation_title else "New Conversation"
+                    conversation.last_message = last_message_text
+                    session.add(conversation)
+                    session.commit()
+                    ws_logger.debug(f"Conversation title updated for {conversation_id}")
 
                 await typing_indicator(False, websocket)
 
