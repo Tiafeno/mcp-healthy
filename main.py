@@ -54,9 +54,7 @@ async def get_ws_token(
     token: Annotated[str | None, Query()] = None,
 ):
     if token is None:
-        logger.warning("WebSocket connection attempt without token")
         raise WebSocketException(code=status.WS_1008_POLICY_VIOLATION)
-    logger.debug("WebSocket token validation successful")
     return token
 
 
