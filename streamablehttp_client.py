@@ -45,46 +45,12 @@ class StreamableHTTPClient:
             self.logger.error(f"Failed to connect to MCP server: {e}", exc_info=True)
             raise
 
-    async def process_query(
-        self, user_message: str, last_message: str | None, document_urls: list[str]
-    ):
-        """Process a query using Claude and available tools"""
+    async def list_tools(self) -> list[dict]:
         if not self.session:
-            self.logger.error("Session not initialized when trying to process query")
             raise RuntimeError("Session not initialized. Call connect_to_server first.")
-        
-        if document_urls:
-            self.logger.info(f"Processing {len(document_urls)} document URLs")
-            self.logger.debug(f"Document URLs: {document_urls}")
-
-        messages: list = []
-        if last_message:
-            self.logger.debug("Continuing conversation with last message. Message: %s", last_message[:100] + ('...' if len(last_message) > 100 else ''))
-            messages.append({"role": "assistant", "content": last_message})
-        else:
-            messages.append(
-                {
-                    "role": "user",
-                    "content": (
-                        "You are a health and nutrition expert. Use the tools of healthy-server to assist users with their dietary needs and health-related inquiries. Provide accurate and helpful information based on the user's questions and the data available through the tools."
-                    ),
-                }
-            )
-
-        document_sources: list[ImageBlockParam] = [
-            {"type": "image", "source": {"type": "url", "url": url}}
-            for url in document_urls
-        ]
-        messages.append(
-            {
-                "role": "user",
-                "content": [{"type": "text", "text": user_message}] + document_sources,
-            }
-        )
-        
         try:
             response = await self.session.list_tools()
-            available_tools = [
+            return  [
                 {
                     "name": tool.name,
                     "description": tool.description,
@@ -92,17 +58,39 @@ class StreamableHTTPClient:
                 }
                 for tool in response.tools
             ]
-            self.logger.info(f"Retrieved {len(available_tools)} available tools from MCP server")
         except Exception as e:
-            self.logger.error(f"Failed to retrieve tools from MCP server: {e}", exc_info=True)
-            available_tools = []
+            return []
+            
+    async def process_query(
+        self, user_message: str, last_message: str | None, document_urls: list[str]
+    ):
+        if not self.session:
+            raise RuntimeError("Session not initialized. Call connect_to_server first.")
+
+        document_sources: list[ImageBlockParam] = [
+            {"type": "image", "source": {"type": "url", "url": url}}
+            for url in document_urls
+        ]
+
+        messages: list = []
+        messages.append({"role": "assistant", "content": last_message} if last_message else {"role": "user", "content": (
+            "You are a health and nutrition expert. Use the tools of healthy-server to assist users with their dietary needs and health-related inquiries. Provide accurate and helpful information based on the user's questions and the data available through the tools."
+        )})
+        messages.append(
+            {
+                "role": "user",
+                "content": [{"type": "text", "text": user_message}] + document_sources,
+            }
+        )
+
+        available_tools = await self.list_tools()
 
         # Initial Claude API call
         response = self.anthropic.messages.create(
             model=self.model,
             max_tokens=self.max_tokens,
             messages=messages,
-            tools=available_tools  # type: ignore
+            tools=available_tools 
         )
 
         # Process response and handle tool calls
