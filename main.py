@@ -239,6 +239,8 @@ async def websocket_endpoint(
                 if last_message_text:
                     await add_message(last_message_text, role="assistant", external_id=_current_message_id)
                     await redis_service.store_last_message(conversation_id, last_message_text)
+                    
+                await manager.send_personal_message({"type": "message_end"}, websocket)
 
                 _response_message.clear()
                 _current_block_index = None
