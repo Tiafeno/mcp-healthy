@@ -46,24 +46,24 @@ class StreamableHTTPClient:
             self.logger.error(f"Failed to connect to MCP server: {e}", exc_info=True)
             raise
 
-    async def list_tools(self) -> list[dict]:
+    async def list_tools(self) -> list[ToolUnionParam]:
         if not self.session:
             raise RuntimeError("Session not initialized. Call connect_to_server first.")
         try:
             response = await self.session.list_tools()
-            return  [
+            return cast(list[ToolUnionParam], [
                 {
                     "name": tool.name,
                     "description": tool.description,
                     "input_schema": tool.inputSchema,
                 }
                 for tool in response.tools
-            ]
+            ])
         except Exception as e:
             return []
             
     async def process_query(
-        self, user_message: str, last_message: str | None, document_urls: list[str]
+        self, user_message: str, last_message: str | None, document_urls: list[str] = []
     ):
         if not self.session:
             raise RuntimeError("Session not initialized. Call connect_to_server first.")
@@ -95,49 +95,31 @@ class StreamableHTTPClient:
         )
 
         # Process response and handle tool calls
-        message: str | None = None
-        text_responses = 0
-        tool_calls = 0
-        
         for content in response.content:
             if content.type == "text":
-                text_responses += 1
-                self.logger.debug(f"Yielding text response #{text_responses}: {len(content.text)} characters")
-                yield content.text
+                yield content
             elif content.type == "tool_use":
-                tool_calls += 1
                 tool_name = content.name
                 tool_args = content.input
-                self.logger.info(f"Tool call #{tool_calls}: {tool_name} with args: {tool_args}")
+                self.logger.info(f"Tool call with name: {tool_name} and args: {tool_args}")
 
                 try:
                     # Execute tool call
                     result = await self.session.call_tool(tool_name, tool_args)  # type: ignore
-                    self.logger.debug(f"Tool call {tool_name} executed successfully")
-                    
-                    # Continue conversation with tool results
-                    if hasattr(content, "text") and content.text:
-                        messages.append({"role": "assistant", "content": content.text})  # type: ignore
                     messages.append({"role": "user", "content": result.content})
 
                     # Get next response from Claude
-                    response = self.anthropic.messages.create(
+                    with self.anthropic.messages.stream(
                         model=self.model,
                         max_tokens=self.max_tokens,
                         messages=messages,
-                    )
-                    
-                    if response.content and response.content[0].type == "text":
-                        message = response.content[0].text
+                    ) as stream_response:
+                        for event in stream_response:
+                            yield event
                         
                 except Exception as e:
                     self.logger.error(f"Error executing tool {tool_name}: {e}", exc_info=True)
                     continue
-
-        if message:
-            yield message
-        
-        self.logger.info(f"Query processing completed. Text responses: {text_responses}, Tool calls: {tool_calls}")
 
     async def process_conversation_title_query(self, assistant_message: str) -> str | None:
         try:
