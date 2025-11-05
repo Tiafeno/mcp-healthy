@@ -35,14 +35,20 @@ from utils.redis_service import redis_service
 app_logger = setup_logging(
     log_level=os.getenv("LOG_LEVEL", "INFO"),
     log_dir=os.getenv("LOG_DIR", "logs"),
-    app_name=os.getenv("APP_NAME", "healthy-mcp")
+    app_name=os.getenv("APP_NAME", "healthy-mcp"),
 )
 
-from models import lifespan, Session, get_session, Message, Documents, Conversation, engine
+from models import (
+    lifespan,
+    Session,
+    get_session,
+    Message,
+    Documents,
+    Conversation,
+    engine,
+)
 
 app = FastAPI(lifespan=lifespan)
-
-# Ajouter le middleware de logging
 app.add_middleware(LoggingMiddleware)
 
 # Logger pour ce module
@@ -51,15 +57,11 @@ logger = get_logger(__name__)
 from streamablehttp_client import StreamableHTTPClient
 
 # Récupération des variables d'environnement
-mcp_streaming_url = os.getenv(
-    "MCP_STREAMING_HTTP_URL", "https://healthy-ai.test/mcp/healthy"
-)
+mcp_streaming_url = os.getenv("MCP_STREAMING_HTTP_URL") or ""
 
-logger.info(f"Configuration MCP Streaming URL: {mcp_streaming_url}")
 
 async def get_ws_token(
-    websocket: WebSocket,
-    token: Annotated[str | None, Query()] = None,
+    websocket: WebSocket, token: Annotated[str | None, Query()] = None
 ):
     if token is None:
         raise WebSocketException(code=status.WS_1008_POLICY_VIOLATION)
@@ -74,9 +76,8 @@ class ConnectionManager:
     async def connect(self, websocket: WebSocket):
         await websocket.accept()
         self.active_connections.append(websocket)
-        websocket_id = id(websocket)
         client_ip = websocket.client.host if websocket.client else "Unknown"
-        websocket_logger.log_connection(str(websocket_id), client_ip)
+        websocket_logger.log_connection(str(id(websocket)), client_ip)
         self.logger.info(f"Active connections: {len(self.active_connections)}")
 
     def disconnect(self, websocket: WebSocket):
@@ -90,16 +91,15 @@ class ConnectionManager:
         try:
             data = json.dumps(message) if isinstance(message, dict) else message
             await websocket.send_text(data)
-            websocket_id = id(websocket)
-            message_type = type(message).__name__
-            websocket_logger.log_message_sent(str(websocket_id), message_type, len(data))
         except Exception as e:
             websocket_id = id(websocket)
             websocket_logger.log_error(str(websocket_id), e)
             raise
 
     async def broadcast(self, message: str):
-        self.logger.info(f"Broadcasting message to {len(self.active_connections)} connections")
+        self.logger.info(
+            f"Broadcasting message to {len(self.active_connections)} connections"
+        )
         for connection in self.active_connections:
             try:
                 await connection.send_text(message)
@@ -265,8 +265,8 @@ async def websocket_endpoint(
             except Exception as e:
                 ws_logger.error(f"Error processing message: {e}", exc_info=True)
                 await manager.send_personal_message({"type": "error", "message": str(e)}, websocket)
+            finally:
                 await typing_indicator(False, websocket)
-                continue
 
     except WebSocketDisconnect:
         ws_logger.info(f"WebSocket disconnected for conversation {conversation_id}")
@@ -276,20 +276,22 @@ async def websocket_endpoint(
         ws_logger.error(f"Unexpected error in WebSocket endpoint: {e}", exc_info=True)
         manager.disconnect(websocket)
     finally:
-        if 'client' in locals():
+        if "client" in locals():
             await client.cleanup()
-            ws_logger.debug("StreamableHTTPClient cleanup completed")
+
 
 # Routes de santé et d'administration
 @app.get("/status/health")
-async def health_check(token: Annotated[str, Query()],):
+async def health_check(
+    token: Annotated[str, Query()],
+):
     """Endpoint de santé pour vérifier l'état du système"""
     health_logger = get_logger("healthy-mcp.health")
-    
+
     try:
         # Vérifier l'état de Redis
         redis_health = await redis_service.health_check()
-        
+
         # Vérifier l'état de la base de données
         db_healthy = True
         try:
@@ -298,69 +300,87 @@ async def health_check(token: Annotated[str, Query()],):
         except Exception as e:
             health_logger.error(f"Database health check failed: {e}")
             db_healthy = False
-        
+
         health_status = {
-            "status": "healthy" if redis_health["connected"] and db_healthy else "degraded",
+            "status": (
+                "healthy" if redis_health["connected"] and db_healthy else "degraded"
+            ),
             "timestamp": redis_service._get_current_timestamp(),
             "services": {
                 "redis": {
-                    "status": "healthy" if redis_health["connected"] and redis_health["ping_successful"] else "unhealthy",
+                    "status": (
+                        "healthy"
+                        if redis_health["connected"] and redis_health["ping_successful"]
+                        else "unhealthy"
+                    ),
                     "connected": redis_health["connected"],
                     "ping_successful": redis_health["ping_successful"],
                     "active_conversations": redis_health["active_conversations"],
-                    "error": redis_health.get("error")
+                    "error": redis_health.get("error"),
                 },
-                "database": {
-                    "status": "healthy" if db_healthy else "unhealthy"
-                }
-            }
+                "database": {"status": "healthy" if db_healthy else "unhealthy"},
+            },
         }
-        
+
         health_logger.info(f"Health check completed: {health_status['status']}")
         return health_status
-        
+
     except Exception as e:
         health_logger.error(f"Health check failed: {e}", exc_info=True)
         return {
             "status": "unhealthy",
             "timestamp": redis_service._get_current_timestamp(),
-            "error": str(e)
+            "error": str(e),
         }
 
+
 @app.get("/status/redis-stats")
-async def redis_stats(token: Annotated[str, Query()],):
+async def redis_stats(
+    token: Annotated[str, Query()],
+):
     """Endpoint pour obtenir les statistiques Redis"""
     stats_logger = get_logger("healthy-mcp.redis.stats")
-    
+
     try:
         active_conversations = await redis_service.get_active_conversations()
         redis_health = await redis_service.health_check()
-        
+
         stats = {
             "connected": redis_health["connected"],
             "active_conversations": len(active_conversations),
-            "conversations": active_conversations[:10],  # Limite à 10 pour éviter les réponses trop grandes
-            "total_conversations": len(active_conversations)
+            "conversations": active_conversations[
+                :10
+            ],  # Limite à 10 pour éviter les réponses trop grandes
+            "total_conversations": len(active_conversations),
         }
-        
-        stats_logger.debug(f"Redis stats requested: {len(active_conversations)} active conversations")
+
+        stats_logger.debug(
+            f"Redis stats requested: {len(active_conversations)} active conversations"
+        )
         return stats
-        
+
     except Exception as e:
         stats_logger.error(f"Failed to get Redis stats: {e}", exc_info=True)
         return {"error": str(e), "connected": False}
 
+
 async def typing_indicator(status: bool, websocket: WebSocket):
     await manager.send_personal_message({"type": "typing", "status": status}, websocket)
 
-async def get_document_by_id(attachment_id: int, session: sessionDep) -> Documents | None:
+
+async def get_document_by_id(
+    attachment_id: int, session: sessionDep
+) -> Documents | None:
     db_logger = get_logger("healthy-mcp.database")
     try:
         document = session.get(Documents, attachment_id)
         return document
     except Exception as e:
-        db_logger.error(f"Error fetching document with id {attachment_id}: {e}", exc_info=True)
+        db_logger.error(
+            f"Error fetching document with id {attachment_id}: {e}", exc_info=True
+        )
         return None
+
 
 async def get_document_download_url(document: Documents, token: str) -> str | None:
     api_logger = get_logger("healthy-mcp.api")
@@ -368,12 +388,17 @@ async def get_document_download_url(document: Documents, token: str) -> str | No
         api_base_path = os.getenv("API_BASE_URL")
         if not api_base_path:
             return None
-        
-        url = f"{api_base_path}/api/documents/{document.id}/download?access_token={token}"
+
+        url = (
+            f"{api_base_path}/api/documents/{document.id}/download?access_token={token}"
+        )
         return url
     except Exception as e:
-        api_logger.error(f"Error generating download URL for document {document.id}: {e}")
+        api_logger.error(
+            f"Error generating download URL for document {document.id}: {e}"
+        )
         return None
+
 
 if __name__ == "__main__":
     uvicorn.run(

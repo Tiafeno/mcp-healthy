@@ -9,7 +9,7 @@ logging.basicConfig(level=logging.INFO)
 # Get database URL from environment variables for security
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./test.db")
 
-engine = create_engine(DATABASE_URL, echo=True) # echo=True for logging SQL queries
+engine = create_engine(DATABASE_URL, echo=False) # echo=True for logging SQL queries
 
 def get_session():
     with Session(engine) as session:
@@ -38,6 +38,5 @@ async def lifespan(app: FastAPI):
     logging.info("Shutting down...")
     try:
         await redis_service.disconnect()
-        logging.info("Redis service disconnected")
     except Exception as e:
         logging.error(f"Error disconnecting Redis service: {e}")
