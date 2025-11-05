@@ -1,12 +1,13 @@
 from typing import Optional
 import os
+from typing import cast
 from contextlib import AsyncExitStack
 
 from mcp import ClientSession
 from mcp.client.streamable_http import streamablehttp_client
 
 from anthropic import Anthropic
-from anthropic.types import ImageBlockParam, beta
+from anthropic.types import ImageBlockParam, ToolUnionParam
 
 from utils.logging_config import get_logger
 

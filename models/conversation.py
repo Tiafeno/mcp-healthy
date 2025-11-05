@@ -20,6 +20,7 @@ class Message(SQLModel, table=True):
     
     uuid: str | None = Field(default=None, primary_key=True)
     conversation_id: str
+    external_id : str | None = None
     role: str
     content: str
     created_at: datetime = Field()
