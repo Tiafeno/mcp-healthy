@@ -122,79 +122,71 @@ async def websocket_endpoint(
 ):
     websocket_id = str(id(websocket))
     ws_logger = get_logger("healthy-mcp.websocket.endpoint")
-    
+
+    async def add_message(content: str, role: str = "user", external_id: str | None = None) -> Message:
+        message = Message(
+            conversation_id=conversation_id,
+            role=role,
+            content=content,
+            external_id=external_id,
+            created_at="now()",  # type: ignore
+        )
+        session.add(message)
+        session.commit()
+        return message
+
     try:
-        ws_logger.info(f"WebSocket connection attempt for conversation {conversation_id}")
         await manager.connect(websocket)
         client = StreamableHTTPClient(token, mcp_streaming_url)
         await client.connect_to_server()
-        ws_logger.info(f"StreamableHTTPClient connected for conversation {conversation_id}")
 
         # Try to get last message from Redis first
         last_message_text: str | None = None
         last_message_text = await redis_service.get_last_message(conversation_id)
-        
-        if last_message_text:
-            ws_logger.debug(f"Last message retrieved from Redis for conversation {conversation_id}")
-        else:
-            # Fallback to database if not in Redis
-            ws_logger.debug("No cached message found, querying database")
-            statement = (
+
+        conversation = session.get(Conversation, conversation_id)
+        if last_message_text is None:
+            last_message = session.exec(
                 select(Message)
                 .where(Message.conversation_id == conversation_id)
                 .where(Message.role == "assistant")
                 .order_by(Message.created_at.desc())  # type: ignore
-            )
-            last_message = session.exec(statement).first()
+            ).first()
             if last_message:
                 last_message_text = last_message.content
-                # Store in Redis for future use
-                await redis_service.store_last_message(conversation_id, last_message_text)
-                ws_logger.debug(f"Last message found in database and cached for conversation {conversation_id}")
-            else:
-                ws_logger.debug(f"No previous messages found for conversation {conversation_id}")
+                await redis_service.store_last_message(
+                    conversation_id, last_message.content
+                )
 
         while True:
-            message_received = (await websocket.receive_text())  # format {"message": "text", attachments: [...]}
-            websocket_logger.log_message_received(websocket_id, "text", len(message_received))
-            
+            message_received = (
+                await websocket.receive_text()
+            )  # format {"message": "text", attachments: [...]}
             try:
                 message_data = json.loads(message_received)
             except json.JSONDecodeError as e:
-                ws_logger.warning(f"Invalid JSON received: {e}")
-                await manager.send_personal_message("Invalid message format", websocket)
+                await manager.send_personal_message(
+                    {"type": "error", "message": "Invalid message format"}, websocket
+                )
                 continue
-            
+
             message_content = message_data.get("message", "")
             message_attachments = message_data.get("attachments", [])
 
             if not message_content or len(message_content.strip()) <= 2:
-                ws_logger.warning("Empty or too short message received")
                 await manager.send_personal_message(
-                    "Message content is required", websocket
+                    {"type": "error", "message": "Message content is required"}, websocket
                 )
                 continue
-            
-            ws_logger.info(f"Processing message for conversation {conversation_id}: {len(message_content)} chars")
-            urls = list()
+
+            urls = list()  # document URLs extracted from attachments
 
             await typing_indicator(True, websocket)
             try:
-                message = Message(
-                    conversation_id=conversation_id,
-                    role="user",
-                    content=message_content,
-                    created_at="now()",  # type: ignore
-                )
-                session.add(message)
-                session.commit()
-                ws_logger.debug(f"User message saved to database: {message.uuid}")
-                
-                # Send user message back to client
-                await manager.send_personal_message(message.dict(), websocket)
-
+                message: Message = await add_message(message_content, role="user")
+                await manager.send_personal_message({"type": "user_message", "message": message.dict()}, websocket)
+                # Attachment processing
                 if message_attachments is not None and len(message_attachments) > 0:
-                    ws_logger.info(f"Processing {len(message_attachments)} attachments")
                     documents = [
                         await get_document_by_id(att_id, session)
                         for att_id in message_attachments
@@ -206,42 +198,66 @@ async def websocket_endpoint(
                         doc.message_uuid = message.uuid
                         session.add(doc)
                         session.commit()
-                    ws_logger.debug(f"Processed {len(urls)} document URLs")
 
                 # Process the query and get the response
-                response_count = 0
-                async for response in client.process_query(message_content, last_message_text, urls):
-                    if response is None:
-                        continue
-                    response_count += 1
-                    response_message = Message(
-                        conversation_id=conversation_id,
-                        role="assistant",
-                        content=response,
-                        created_at="now()",  # type: ignore
-                    )
-                    session.add(response_message)
-                    session.commit()
+                _current_block_index = None
+                _current_message_id = None
+                _response_message: dict[int, str] = dict()
 
-                    # Update last message in Redis
-                    last_message_text = response_message.content
-                    redis_stored = await redis_service.store_last_message(conversation_id, last_message_text)
-                    if not redis_stored:
-                        ws_logger.warning(f"Failed to update Redis cache for conversation {conversation_id}")
-                    
-                    await manager.send_personal_message(response_message.dict(), websocket)
-                
-                ws_logger.info(f"Query processed successfully, {response_count} responses sent")
-                
+                async for response in client.process_query(message_content, last_message_text, urls):
+                    await manager.send_personal_message(response.to_dict(), websocket)
+                    if isinstance(response, TextBlock):
+                        message: Message = await add_message(response.text, role="assistant")
+                        last_message_text = response.text
+                    if isinstance(response, MessageStartEvent):
+                        _current_message_id = response.message.id
+                    elif isinstance(response, ContentBlockStartEvent):
+                        _response_message[response.index] = ""
+                        _current_block_index = (
+                            response.index
+                            if response.content_block.type == "text"
+                            else None
+                        )
+                    elif isinstance(response, ContentBlockDeltaEvent):
+                        if (
+                            _current_block_index in _response_message
+                            and response.delta.type == "text_delta"
+                        ):
+                            _response_message[
+                                _current_block_index
+                            ] += response.delta.text
+                    elif isinstance(response, ContentBlockStopEvent) or isinstance(
+                        response, MessageStopEvent
+                    ):
+                        _current_block_index = None
+
+                if _response_message.values().__len__() != 0:
+                    last_message_text = ""
+                    for content in _response_message.values():
+                        last_message_text += content
+
+                if last_message_text:
+                    await add_message(last_message_text, role="assistant", external_id=_current_message_id)
+                    await redis_service.store_last_message(conversation_id, last_message_text)
+
+                _response_message.clear()
+                _current_block_index = None
+                _current_message_id = None
+
                 # generate conversation title
-                conversation = session.get(Conversation, conversation_id)
-                if last_message_text and conversation and conversation.title in (None, "", "New Conversation"):
+                if (
+                    last_message_text
+                    and conversation
+                    and conversation.title in (None, "", "New Conversation")
+                ):
                     conversation_title = await client.process_conversation_title_query(last_message_text)
-                    conversation.title = conversation_title if conversation_title else "New Conversation"
+                    conversation.title = (conversation_title if conversation_title else "New Conversation")
                     conversation.last_message = last_message_text
                     session.add(conversation)
                     session.commit()
-                    await manager.send_personal_message({"type": "update-conversation"}, websocket)
+                    await manager.send_personal_message(
+                        {"type": "update-conversation-list"}, websocket
+                    )
                     ws_logger.debug(f"Conversation title updated for {conversation_id}")
 
                 await typing_indicator(False, websocket)
