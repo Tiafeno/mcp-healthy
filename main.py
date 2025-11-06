@@ -4,12 +4,7 @@ import json
 from sqlmodel import select
 from typing import Annotated
 from anthropic.types import (
-    TextBlock,
-    MessageStopEvent,
-    MessageStartEvent,
-    ContentBlockDeltaEvent,
-    ContentBlockStartEvent,
-    ContentBlockStopEvent,
+    TextBlock
 )
 from fastapi import (
     FastAPI,
@@ -226,16 +221,13 @@ async def conversation_endpoint(
     except Exception as e:
         ws_logger.error(f"Unexpected error in WebSocket endpoint: {e}", exc_info=True)
     finally:
-        await manager.disconnect()
         if "client" in locals():
             await client.cleanup()
 
 
 # Routes de santé et d'administration
 @app.get("/status/health")
-async def health_check(
-    token: Annotated[str, Query()],
-):
+async def health_check(token: Annotated[str, Query()]):
     """Endpoint de santé pour vérifier l'état du système"""
     health_logger = get_logger("healthy-mcp.health")
 
