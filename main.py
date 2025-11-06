@@ -133,7 +133,7 @@ async def conversation_endpoint(
         return message
 
     try:
-        await manager.connect(websocket)
+        await manager.connect()
         client = StreamableHTTPClient(token, mcp_streaming_url)
         await client.connect_to_server()
 
@@ -156,32 +156,26 @@ async def conversation_endpoint(
                 )
 
         while True:
-            message_received = (
-                await websocket.receive_text()
-            )  # format {"message": "text", attachments: [...]}
+            message_received = (await websocket.receive_text()) # format {"message": "text", attachments: [...]}
             try:
                 message_data = json.loads(message_received)
             except json.JSONDecodeError as e:
-                await manager.send_personal_message(
-                    {"type": "error", "message": "Invalid message format"}, websocket
-                )
+                await manager.send_error_message("Invalid message format")
                 continue
 
             message_content = message_data.get("message", "")
             message_attachments = message_data.get("attachments", [])
 
             if not message_content or len(message_content.strip()) <= 2:
-                await manager.send_personal_message(
-                    {"type": "error", "message": "Message content is required"}, websocket
-                )
+                await manager.send_error_message("Message content is required")
                 continue
 
             urls = list()  # document URLs extracted from attachments
 
-            await typing_indicator(True, websocket)
+            await manager.send_typing_message(True, "")
             try:
                 message: Message = await add_message(message_content, role="user")
-                await manager.send_personal_message({"type": "user_message", "message": message.dict()}, websocket)
+                await manager.send_personal_message({"type": "message-ack", "message": message.dict()})
                 # Attachment processing
                 if message_attachments is not None and len(message_attachments) > 0:
                     documents = [
@@ -196,52 +190,17 @@ async def conversation_endpoint(
                         session.add(doc)
                         session.commit()
 
-                # Process the query and get the response
-                _current_block_index = None
-                _current_message_id = None
-                _response_message: dict[int, str] = dict()
-
                 async for response in client.process_query(message_content, last_message_text, urls):
-                    await manager.send_personal_message(response.to_dict(), websocket)
                     if isinstance(response, TextBlock):
                         message: Message = await add_message(response.text, role="assistant")
+                        await manager.send_personal_message({"type": "message-ack", "message": message.dict()})
                         last_message_text = response.text
-                    if isinstance(response, MessageStartEvent):
-                        _current_message_id = response.message.id
-                    elif isinstance(response, ContentBlockStartEvent):
-                        _response_message[response.index] = ""
-                        _current_block_index = (
-                            response.index
-                            if response.content_block.type == "text"
-                            else None
-                        )
-                    elif isinstance(response, ContentBlockDeltaEvent):
-                        if (
-                            _current_block_index in _response_message
-                            and response.delta.type == "text_delta"
-                        ):
-                            _response_message[
-                                _current_block_index
-                            ] += response.delta.text
-                    elif isinstance(response, ContentBlockStopEvent) or isinstance(
-                        response, MessageStopEvent
-                    ):
-                        _current_block_index = None
+                        await redis_service.store_last_message(conversation_id, last_message_text)
+                    else:
+                        ws_logger.warning(f"Unknown response block type: {type(response)}")
+                        continue
 
-                if _response_message.values().__len__() != 0:
-                    last_message_text = ""
-                    for content in _response_message.values():
-                        last_message_text += content
-
-                if last_message_text:
-                    await add_message(last_message_text, role="assistant", external_id=_current_message_id)
-                    await redis_service.store_last_message(conversation_id, last_message_text)
-                    
-                await manager.send_personal_message({"type": "message_end"}, websocket)
-
-                _response_message.clear()
-                _current_block_index = None
-                _current_message_id = None
+                await manager.send_typing_message(False, "")
 
                 # generate conversation title
                 if (
@@ -254,27 +213,20 @@ async def conversation_endpoint(
                     conversation.last_message = last_message_text
                     session.add(conversation)
                     session.commit()
-                    await manager.send_personal_message(
-                        {"type": "update-conversation-list"}, websocket
-                    )
-                    ws_logger.debug(f"Conversation title updated for {conversation_id}")
-
-                await typing_indicator(False, websocket)
+                    await manager.send_personal_message({"type": "conversation-ack", "conversation": conversation.dict()})
 
             except Exception as e:
                 ws_logger.error(f"Error processing message: {e}", exc_info=True)
-                await manager.send_personal_message({"type": "error", "message": str(e)}, websocket)
+                await manager.send_error_message(str(e))
             finally:
-                await typing_indicator(False, websocket)
+                await manager.send_typing_message(False, "")
 
     except WebSocketDisconnect:
         ws_logger.info(f"WebSocket disconnected for conversation {conversation_id}")
-        manager.disconnect(websocket)
-        await manager.broadcast(f"Client #{conversation_id} left the chat")
     except Exception as e:
         ws_logger.error(f"Unexpected error in WebSocket endpoint: {e}", exc_info=True)
-        manager.disconnect(websocket)
     finally:
+        await manager.disconnect()
         if "client" in locals():
             await client.cleanup()
 
