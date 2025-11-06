@@ -7,10 +7,9 @@ from mcp import ClientSession
 from mcp.client.streamable_http import streamablehttp_client
 
 from anthropic import Anthropic
-from anthropic.types import ImageBlockParam, ToolUnionParam
+from anthropic.types import ImageBlockParam, ToolUnionParam, TextBlock
 
 from utils.logging_config import get_logger
-
 
 class StreamableHTTPClient:
     def __init__(self, session_token: str, mcp_url: str):
@@ -95,9 +94,10 @@ class StreamableHTTPClient:
         )
 
         # Process response and handle tool calls
+        message: str | None = None
         for content in response.content:
             if content.type == "text":
-                yield content
+                yield TextBlock(type="text", text=content.text)
             elif content.type == "tool_use":
                 tool_name = content.name
                 tool_args = content.input
@@ -109,17 +109,20 @@ class StreamableHTTPClient:
                     messages.append({"role": "user", "content": result.content})
 
                     # Get next response from Claude
-                    with self.anthropic.messages.stream(
+                    response =  self.anthropic.messages.create(
                         model=self.model,
                         max_tokens=self.max_tokens,
                         messages=messages,
-                    ) as stream_response:
-                        for event in stream_response:
-                            yield event
+                    )
+                    for next_content in response.content:
+                        if next_content.type == "text":
+                            message = next_content.text
                         
                 except Exception as e:
                     self.logger.error(f"Error executing tool {tool_name}: {e}", exc_info=True)
                     continue
+        if message:
+            yield TextBlock(type="text", text=message)
 
     async def process_conversation_title_query(self, assistant_message: str) -> str | None:
         try:
