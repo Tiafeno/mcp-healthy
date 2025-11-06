@@ -31,16 +31,12 @@ class StreamableHTTPClient:
         }
 
         try:
-            http_transport = await self.exit_stack.enter_async_context(
-                streamablehttp_client(**server_params)
-            )
+
+            http_transport = await self.exit_stack.enter_async_context(streamablehttp_client(**server_params))
             self.read, self.write, _ = http_transport
-            self.session = await self.exit_stack.enter_async_context(
-                ClientSession(self.read, self.write)
-            )
+            self.session = await self.exit_stack.enter_async_context(ClientSession(self.read, self.write))
             await self.session.initialize()
-            self.logger.info("MCP server connection established and initialized successfully")
-            
+
         except Exception as e:
             self.logger.error(f"Failed to connect to MCP server: {e}", exc_info=True)
             raise
@@ -60,7 +56,7 @@ class StreamableHTTPClient:
             ])
         except Exception as e:
             return []
-            
+
     async def process_query(
         self, user_message: str, last_message: str | None, document_urls: list[str] = []
     ):

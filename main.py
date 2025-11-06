@@ -311,24 +311,13 @@ async def redis_stats(token: Annotated[str, Query()]):
         stats_logger.error(f"Failed to get Redis stats: {e}", exc_info=True)
         return {"error": str(e), "connected": False}
 
-
-async def typing_indicator(status: bool, websocket: WebSocket):
-    await manager.send_personal_message({"type": "typing", "status": status}, websocket)
-
-
-async def get_document_by_id(
-    attachment_id: int, session: sessionDep
-) -> Documents | None:
+async def get_document_by_id(attachment_id: int, session: sessionDep) -> Documents | None:
     db_logger = get_logger("healthy-mcp.database")
     try:
-        document = session.get(Documents, attachment_id)
-        return document
+        return session.get(Documents, attachment_id)
     except Exception as e:
-        db_logger.error(
-            f"Error fetching document with id {attachment_id}: {e}", exc_info=True
-        )
+        db_logger.error(f"Error fetching document with id {attachment_id}: {e}", exc_info=True)
         return None
-
 
 async def get_document_download_url(document: Documents, token: str) -> str | None:
     api_logger = get_logger("healthy-mcp.api")
@@ -346,7 +335,6 @@ async def get_document_download_url(document: Documents, token: str) -> str | No
             f"Error generating download URL for document {document.id}: {e}"
         )
         return None
-
 
 if __name__ == "__main__":
     uvicorn.run(
