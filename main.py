@@ -69,60 +69,57 @@ async def get_ws_token(
 
 
 class ConnectionManager:
-    def __init__(self):
-        self.active_connections: list[WebSocket] = []
+    def __init__(self, socket: WebSocket):
         self.logger = get_logger("healthy-mcp.websocket.manager")
+        self.socket: WebSocket = socket
 
-    async def connect(self, websocket: WebSocket):
-        await websocket.accept()
-        self.active_connections.append(websocket)
-        client_ip = websocket.client.host if websocket.client else "Unknown"
-        websocket_logger.log_connection(str(id(websocket)), client_ip)
-        self.logger.info(f"Active connections: {len(self.active_connections)}")
+    async def connect(self):
+        await self.socket.accept()
+        client_ip = self.socket.client.host if self.socket.client else "Unknown"
+        websocket_logger.log_connection(str(id(self.socket)), client_ip)
 
-    def disconnect(self, websocket: WebSocket):
-        if websocket in self.active_connections:
-            self.active_connections.remove(websocket)
-            websocket_id = id(websocket)
-            websocket_logger.log_disconnection(str(websocket_id))
-            self.logger.info(f"Active connections: {len(self.active_connections)}")
-
-    async def send_personal_message(self, message: str | dict, websocket: WebSocket):
+    async def disconnect(self):
+        websocket_id = id(self.socket)
+        await self.socket.close()
+        websocket_logger.log_disconnection(str(websocket_id))
+    
+    async def send_personal_message(self, message: str | dict):
         try:
             data = json.dumps(message) if isinstance(message, dict) else message
-            await websocket.send_text(data)
+            await self.socket.send_text(data)
         except Exception as e:
-            websocket_id = id(websocket)
-            websocket_logger.log_error(str(websocket_id), e)
+            raise
+
+    async def send_typing_message(self, status: bool, content: str = ""):
+        try:
+            await self.socket.send_text(json.dumps({"type": "typing", "status": status, "content": content}))
+        except Exception as e:
+            raise
+
+    async def send_error_message(self, error: str):
+        try:
+            await self.socket.send_text(json.dumps({"type": "error", "message": error}))
+        except Exception as e:
             raise
 
     async def broadcast(self, message: str):
-        self.logger.info(
-            f"Broadcasting message to {len(self.active_connections)} connections"
-        )
-        for connection in self.active_connections:
-            try:
-                await connection.send_text(message)
-            except Exception as e:
-                websocket_id = id(connection)
-                websocket_logger.log_error(str(websocket_id), e)
-                self.disconnect(connection)
-
-
-manager = ConnectionManager()
+        try:
+            await self.socket.send_text(message)
+        except Exception as e:
+            websocket_id = id(self.socket)
+            websocket_logger.log_error(str(websocket_id), e)
+            await self.disconnect()
 
 # Depends
 sessionDep = Annotated[Session, Depends(get_session)]
 tokenDep = Annotated[str, Depends(get_ws_token)]
 
-
 @app.websocket("/ws/{user_id}/conversations/{conversation_id}")
-async def websocket_endpoint(
+async def conversation_endpoint(
     websocket: WebSocket, conversation_id: str, token: tokenDep, session: sessionDep
 ):
-    websocket_id = str(id(websocket))
     ws_logger = get_logger("healthy-mcp.websocket.endpoint")
-
+    manager = ConnectionManager(websocket)
     async def add_message(content: str, role: str = "user", external_id: str | None = None) -> Message:
         message = Message(
             conversation_id=conversation_id,
