@@ -284,11 +284,8 @@ async def health_check(
             "error": str(e),
         }
 
-
 @app.get("/status/redis-stats")
-async def redis_stats(
-    token: Annotated[str, Query()],
-):
+async def redis_stats(token: Annotated[str, Query()]):
     """Endpoint pour obtenir les statistiques Redis"""
     stats_logger = get_logger("healthy-mcp.redis.stats")
 
