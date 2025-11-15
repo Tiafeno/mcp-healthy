@@ -56,7 +56,7 @@ mcp_streaming_url = os.getenv("MCP_STREAMING_HTTP_URL") or ""
 
 
 async def get_ws_token(
-    websocket: WebSocket, token: Annotated[str | None, Query()] = None
+        websocket: WebSocket, token: Annotated[str | None, Query()] = None
 ):
     if token is None:
         raise WebSocketException(code=status.WS_1008_POLICY_VIOLATION)
@@ -77,7 +77,7 @@ class ConnectionManager:
         websocket_id = id(self.socket)
         await self.socket.close()
         websocket_logger.log_disconnection(str(websocket_id))
-    
+
     async def send_personal_message(self, message: str | dict):
         try:
             data = json.dumps(message) if isinstance(message, dict) else message
@@ -105,16 +105,18 @@ class ConnectionManager:
             websocket_logger.log_error(str(websocket_id), e)
             await self.disconnect()
 
+
 # Depends
 sessionDep = Annotated[Session, Depends(get_session)]
 tokenDep = Annotated[str, Depends(get_ws_token)]
 
+
 @app.websocket("/ws/{user_id}/conversations/{conversation_id}")
-async def conversation_endpoint(
-    websocket: WebSocket, conversation_id: str, token: tokenDep, session: sessionDep
-):
+async def conversation_endpoint(websocket: WebSocket, conversation_id: str, token: tokenDep, session: sessionDep):
     ws_logger = get_logger("healthy-mcp.websocket.endpoint")
     manager = ConnectionManager(websocket)
+    conversation = session.get(Conversation, conversation_id)
+
     async def add_message(content: str, role: str = "user", external_id: str | None = None) -> Message:
         message = Message(
             conversation_id=conversation_id,
@@ -275,6 +277,7 @@ async def health_check(token: Annotated[str, Query()]):
             "timestamp": redis_service._get_current_timestamp(),
             "error": str(e),
         }
+
 
 @app.get("/status/redis-stats")
 async def redis_stats(token: Annotated[str, Query()]):
