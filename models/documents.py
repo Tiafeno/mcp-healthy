@@ -1,4 +1,5 @@
 from sqlmodel import Field, SQLModel
+import os
 
 class Documents(SQLModel, table=True):
     __tablename__ = "documents"
@@ -11,3 +12,8 @@ class Documents(SQLModel, table=True):
     size: int
     created_at: str = Field()
     updated_at: str | None = None
+
+    @property
+    def download_url(self) -> str:
+        api_base_path = os.getenv("API_BASE_URL")
+        return f"{api_base_path}/api/documents/{self.id}/download"
