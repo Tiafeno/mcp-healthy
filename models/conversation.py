@@ -15,7 +15,8 @@ class Conversation(SQLModel, table=True):
     updated_at: datetime | None = None
     deleted_at: datetime | None = None
 
-    def dict(self):
+    @property
+    def to_dict(self):
         return {
             "uuid": self.uuid.__str__(),
             "title": self.title,
@@ -34,7 +35,8 @@ class Message(SQLModel, table=True):
     created_at: datetime = Field()
     updated_at: datetime | None = None
 
-    def dict(self):
+    @property
+    def to_dict(self):
         return {
             "uuid": self.uuid.__str__(),
             "role": self.role,
