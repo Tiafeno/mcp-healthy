@@ -46,14 +46,14 @@ class StreamableHTTPClient:
             raise RuntimeError("Session not initialized. Call connect_to_server first.")
         try:
             response = await self.session.list_tools()
-            return cast(list[ToolUnionParam], [
+            return cast(list[ToolUnionParam], cast(object, [
                 {
                     "name": tool.name,
                     "description": tool.description,
                     "input_schema": tool.inputSchema,
                 }
                 for tool in response.tools
-            ])
+            ]))
         except Exception as e:
             return []
 
@@ -68,16 +68,13 @@ class StreamableHTTPClient:
             for url in document_urls
         ]
 
-        messages: list = []
-        messages.append({"role": "assistant", "content": last_message} if last_message else {"role": "user", "content": (
-            "You are a health and nutrition expert. Use the tools of healthy-server to assist users with their dietary needs and health-related inquiries. Provide accurate and helpful information based on the user's questions and the data available through the tools."
-        )})
-        messages.append(
-            {
+        messages: list = [
+            {"role": "assistant", "content": last_message} if last_message else {"role": "user", "content": (
+                "You are a health and nutrition expert. Use the tools of healthy-server to assist users with their dietary needs and health-related inquiries. Provide accurate and helpful information based on the user's questions and the data available through the tools."
+            )}, {
                 "role": "user",
                 "content": [{"type": "text", "text": user_message}] + document_sources,
-            }
-        )
+            }]
 
         available_tools = await self.list_tools()
 
