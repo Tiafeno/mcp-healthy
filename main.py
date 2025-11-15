@@ -2,7 +2,7 @@ import uvicorn
 import os
 import json
 from sqlmodel import select
-from typing import Annotated
+from typing import Annotated, Any, Coroutine
 from anthropic.types import (
     TextBlock
 )
@@ -150,11 +150,11 @@ async def conversation_endpoint(websocket: WebSocket, conversation_id: str, toke
         await manager.send_personal_message({"type": "conversation-ack", "conversation": conversation.to_dict})
         return conversation.title
 
-    async def get_documents(attachment_ids: list[int]) -> list[Documents]:
+    async def get_documents(attachment_ids: list[int]) -> list[type[Documents] | None] | list[Any]:
         if len(attachment_ids) == 0:
             return []
         return [
-            await session.get(Documents, att_id)
+            session.get(Documents, att_id)
             for att_id in attachment_ids
         ]
 
