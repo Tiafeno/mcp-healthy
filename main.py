@@ -229,7 +229,7 @@ async def conversation_endpoint(websocket: WebSocket, conversation_id: str, toke
 
 # Routes de santé et d'administration
 @app.get("/status/health")
-async def health_check(token: Annotated[str, Query()]):
+async def health_check():
     """Endpoint de santé pour vérifier l'état du système"""
     health_logger = get_logger("healthy-mcp.health")
 
