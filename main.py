@@ -151,7 +151,7 @@ async def conversation_endpoint(websocket: WebSocket, conversation_id: str, toke
         return conversation.title
 
     async def get_documents(attachment_ids: list[int]) -> list[Documents]:
-        if len(attachment_ids) > 0:
+        if len(attachment_ids) == 0:
             return []
         return [
             await session.get(Documents, att_id)
